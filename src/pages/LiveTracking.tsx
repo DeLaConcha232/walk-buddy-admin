@@ -1,24 +1,25 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MapPin, Navigation, Clock } from "lucide-react";
-import mapboxgl from "mapbox-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
+import LiveMap from "@/components/LiveMap";
 
 const LiveTracking = () => {
   const { walkId } = useParams();
   const [walkData, setWalkData] = useState<any>(null);
+  const [currentPosition, setCurrentPosition] = useState<[number, number] | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-  const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
-  const marker = useRef<mapboxgl.Marker | null>(null);
 
   useEffect(() => {
     if (!walkId) return;
 
     fetchWalkData();
-    subscribeToLocationUpdates();
+    const unsubscribe = subscribeToLocationUpdates();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, [walkId]);
 
   const fetchWalkData = async () => {
@@ -41,32 +42,14 @@ const LiveTracking = () => {
         .single();
 
       if (location) {
-        initializeMap(location.latitude, location.longitude);
+        const lat = Number(location.latitude);
+        const lng = Number(location.longitude);
+        setCurrentPosition([lat, lng]);
         setLastUpdate(new Date(location.timestamp));
       }
     } catch (error) {
       console.error("Error fetching walk data:", error);
     }
-  };
-
-  const initializeMap = (lat: number, lng: number) => {
-    if (!mapContainer.current) return;
-
-    // Note: In production, you'll need to add your Mapbox token
-    // For now, we'll show a placeholder
-    mapContainer.current.innerHTML = `
-      <div class="w-full h-full bg-muted flex items-center justify-center rounded-lg">
-        <div class="text-center space-y-2">
-          <MapPin class="w-12 h-12 text-primary mx-auto" />
-          <p class="text-sm text-muted-foreground">
-            Ubicación: ${lat.toFixed(6)}, ${lng.toFixed(6)}
-          </p>
-          <p class="text-xs text-muted-foreground">
-            Agrega tu token de Mapbox para ver el mapa completo
-          </p>
-        </div>
-      </div>
-    `;
   };
 
   const subscribeToLocationUpdates = () => {
@@ -81,7 +64,9 @@ const LiveTracking = () => {
         },
         (payload) => {
           const location = payload.new;
-          updateMapLocation(location.latitude, location.longitude);
+          const lat = Number(location.latitude);
+          const lng = Number(location.longitude);
+          setCurrentPosition([lat, lng]);
           setLastUpdate(new Date(location.timestamp));
         }
       )
@@ -90,15 +75,6 @@ const LiveTracking = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  };
-
-  const updateMapLocation = (lat: number, lng: number) => {
-    if (map.current) {
-      if (marker.current) {
-        marker.current.setLngLat([lng, lat]);
-      }
-      map.current.flyTo({ center: [lng, lat], zoom: 15 });
-    }
   };
 
   return (
@@ -141,7 +117,23 @@ const LiveTracking = () => {
         {/* Map Container */}
         <Card className="overflow-hidden">
           <CardContent className="p-0">
-            <div ref={mapContainer} className="w-full h-[500px]" />
+            {currentPosition ? (
+              <LiveMap 
+                position={currentPosition}
+                walkerName={walkData?.profiles?.name}
+                dogName={walkData?.dog_name}
+                lastUpdate={lastUpdate || undefined}
+              />
+            ) : (
+              <div className="w-full h-[500px] bg-muted flex items-center justify-center">
+                <div className="text-center space-y-2">
+                  <MapPin className="w-12 h-12 text-primary mx-auto" />
+                  <p className="text-sm text-muted-foreground">
+                    Esperando ubicación del paseador...
+                  </p>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -151,7 +143,7 @@ const LiveTracking = () => {
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <MapPin className="w-4 h-4" />
               <span>
-                El mapa se actualiza automáticamente cada vez que el paseador se mueve
+                El mapa se actualiza automáticamente usando OpenStreetMap
               </span>
             </div>
           </CardContent>
