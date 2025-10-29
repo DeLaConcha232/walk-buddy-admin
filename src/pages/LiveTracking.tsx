@@ -48,7 +48,7 @@ const LiveTracking = () => {
         setLastUpdate(new Date(location.timestamp));
       }
     } catch (error) {
-      console.error("Error fetching walk data:", error);
+      // Error fetching walk data
     }
   };
 

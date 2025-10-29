@@ -35,7 +35,7 @@ const Walks = () => {
 
       setWalks(data || []);
     } catch (error) {
-      console.error("Error fetching walks:", error);
+      // Error fetching walks
     } finally {
       setLoading(false);
     }

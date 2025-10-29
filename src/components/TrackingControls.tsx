@@ -39,9 +39,9 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
         setIsTracking(true);
         startLocationTracking(activeWalk.id);
       }
-    } catch (error) {
-      console.error("Error checking active session:", error);
-    }
+      } catch (error) {
+        // Error checking active session
+      }
   };
 
   const startLocationTracking = (sessionId: string) => {
@@ -65,13 +65,11 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
             longitude,
             timestamp: new Date().toISOString(),
           });
-          console.log("Location updated:", { latitude, longitude });
         } catch (error) {
-          console.error("Error saving location:", error);
+          // Error saving location
         }
       },
       (error) => {
-        console.error("Geolocation error:", error);
         toast({
           title: "Error de GPS",
           description: "No se pudo obtener la ubicación",
@@ -134,7 +132,6 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
         description: "Comparte el código QR con tus clientes",
       });
     } catch (error: any) {
-      console.error("Error starting tracking:", error);
       toast({
         title: "Error",
         description: error.message || "No se pudo iniciar el tracking",
@@ -178,7 +175,6 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
         description: "La sesión de GPS ha terminado",
       });
     } catch (error: any) {
-      console.error("Error stopping tracking:", error);
       toast({
         title: "Error",
         description: error.message || "No se pudo detener el tracking",

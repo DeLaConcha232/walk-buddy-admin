@@ -81,7 +81,7 @@ const Dashboard = () => {
         totalWalks: totalCount || 0,
       });
     } catch (error) {
-      console.error("Error fetching metrics:", error);
+      // Error fetching metrics
     }
   };
 

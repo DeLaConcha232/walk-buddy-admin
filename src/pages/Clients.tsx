@@ -34,7 +34,7 @@ const Clients = () => {
 
       setClients(affiliations || []);
     } catch (error) {
-      console.error("Error fetching clients:", error);
+      // Error fetching clients
     } finally {
       setLoading(false);
     }
