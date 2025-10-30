@@ -1,11 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { QRCodeSVG } from "qrcode.react";
-import { MapPin, Square, Navigation, Share2 } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { MapPin, Navigation, Square, AlertCircle } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface TrackingControlsProps {
   userId: string;
@@ -14,65 +13,104 @@ interface TrackingControlsProps {
 
 const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) => {
   const [isTracking, setIsTracking] = useState(false);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  const [qrUrl, setQrUrl] = useState<string>("");
-  const [showQR, setShowQR] = useState(false);
-  const [watchId, setWatchId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+  const locationIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    // Check if there's an active tracking session
-    checkActiveSession();
+    checkActiveTracking();
+    
+    return () => {
+      stopLocationTracking();
+    };
   }, [userId]);
 
-  const checkActiveSession = async () => {
+  const checkActiveTracking = async () => {
     try {
-      const { data: activeWalk } = await supabase
-        .from("walks")
-        .select("id")
-        .eq("walker_id", userId)
-        .eq("status", "active")
-        .single();
+      // Verificar si hay ubicación activa en admin_locations
+      const { data, error } = await supabase
+        .from("admin_locations")
+        .select("is_active")
+        .eq("admin_id", userId)
+        .eq("is_active", true)
+        .maybeSingle();
 
-      if (activeWalk) {
-        setCurrentSessionId(activeWalk.id);
+      if (error) throw error;
+
+      if (data) {
         setIsTracking(true);
-        startLocationTracking(activeWalk.id);
+        startLocationTracking();
       }
-      } catch (error) {
-        // Error checking active session
-      }
+    } catch (error: any) {
+      // Error checking
+    }
   };
 
-  const startLocationTracking = (sessionId: string) => {
+  const startLocationTracking = () => {
+    // Limpiar intervalo previo si existe
+    if (locationIntervalRef.current) {
+      clearInterval(locationIntervalRef.current);
+    }
+
+    // Obtener ubicación inmediatamente
+    updateLocation();
+
+    // Actualizar ubicación cada 5 minutos
+    locationIntervalRef.current = setInterval(() => {
+      updateLocation();
+    }, 5 * 60 * 1000); // 5 minutos
+  };
+
+  const stopLocationTracking = () => {
+    if (locationIntervalRef.current) {
+      clearInterval(locationIntervalRef.current);
+      locationIntervalRef.current = null;
+    }
+  };
+
+  const updateLocation = () => {
     if (!navigator.geolocation) {
       toast({
-        title: "GPS no disponible",
-        description: "Tu dispositivo no soporta geolocalización",
+        title: "Error",
+        description: "Geolocalización no disponible",
         variant: "destructive",
       });
       return;
     }
 
-    const id = navigator.geolocation.watchPosition(
+    navigator.geolocation.getCurrentPosition(
       async (position) => {
-        const { latitude, longitude } = position.coords;
-        
         try {
-          await supabase.from("admin_locations").insert({
-            admin_id: userId,
-            latitude,
-            longitude,
-            timestamp: new Date().toISOString(),
+          // Desactivar ubicaciones anteriores
+          await supabase
+            .from("admin_locations")
+            .update({ is_active: false })
+            .eq("admin_id", userId)
+            .eq("is_active", true);
+
+          // Insertar nueva ubicación activa
+          const { error } = await supabase
+            .from("admin_locations")
+            .insert({
+              admin_id: userId,
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+              is_active: true,
+            });
+
+          if (error) throw error;
+        } catch (error: any) {
+          toast({
+            title: "Error",
+            description: "No se pudo actualizar la ubicación",
+            variant: "destructive",
           });
-        } catch (error) {
-          // Error saving location
         }
       },
       (error) => {
         toast({
-          title: "Error de GPS",
-          description: "No se pudo obtener la ubicación",
+          title: "Error de ubicación",
+          description: error.message,
           variant: "destructive",
         });
       },
@@ -82,191 +120,111 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
         maximumAge: 0,
       }
     );
-
-    setWatchId(id);
   };
 
-  const handleStartTracking = async () => {
+  const startTracking = async () => {
+    setLoading(true);
     try {
-      // Create a new walk session
-      const { data: walk, error } = await supabase
-        .from("walks")
-        .insert({
-          walker_id: userId,
-          client_id: userId, // Self-assigned for admin tracking
-          dog_name: "Sesión GPS",
-          status: "active",
-          start_time: new Date().toISOString(),
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      // Generate QR code
-      const qrCode = `TRACK-${walk.id}`;
-      const { data: qrData, error: qrError } = await supabase
-        .from("qr_codes")
-        .insert({
-          code: qrCode,
-          walk_id: walk.id,
-          created_by: userId,
-          is_active: true,
-        })
-        .select()
-        .single();
-
-      if (qrError) throw qrError;
-
-      const trackingUrl = `${window.location.origin}/track/${walk.id}`;
-      setQrUrl(trackingUrl);
-      setCurrentSessionId(walk.id);
       setIsTracking(true);
-      setShowQR(true);
-
-      startLocationTracking(walk.id);
-      onMetricsUpdate();
-
+      startLocationTracking();
+      
       toast({
-        title: "Tracking iniciado",
-        description: "Comparte el código QR con tus clientes",
+        title: "Paseo Iniciado",
+        description: "Tu ubicación se actualizará cada 5 minutos",
       });
+      
+      onMetricsUpdate();
     } catch (error: any) {
+      setIsTracking(false);
       toast({
         title: "Error",
-        description: error.message || "No se pudo iniciar el tracking",
+        description: error.message,
         variant: "destructive",
       });
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleStopTracking = async () => {
-    if (!currentSessionId) return;
-
+  const stopTracking = async () => {
+    setLoading(true);
     try {
-      // Stop geolocation watching
-      if (watchId !== null) {
-        navigator.geolocation.clearWatch(watchId);
-        setWatchId(null);
-      }
-
-      // Update walk status
-      await supabase
-        .from("walks")
-        .update({
-          status: "completed",
-          end_time: new Date().toISOString(),
-        })
-        .eq("id", currentSessionId);
-
-      // Deactivate QR code
-      await supabase
-        .from("qr_codes")
+      // Desactivar todas las ubicaciones activas
+      const { error } = await supabase
+        .from("admin_locations")
         .update({ is_active: false })
-        .eq("walk_id", currentSessionId);
+        .eq("admin_id", userId)
+        .eq("is_active", true);
 
+      if (error) throw error;
+
+      stopLocationTracking();
       setIsTracking(false);
-      setCurrentSessionId(null);
-      setShowQR(false);
-      onMetricsUpdate();
 
       toast({
-        title: "Tracking finalizado",
-        description: "La sesión de GPS ha terminado",
+        title: "Paseo Finalizado",
+        description: "El seguimiento de ubicación se ha detenido",
       });
+      
+      onMetricsUpdate();
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.message || "No se pudo detener el tracking",
+        description: error.message,
         variant: "destructive",
       });
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <>
-      <Card className="border-2 shadow-lg">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Navigation className="w-5 h-5 text-primary" />
-            Control de Tracking GPS
-          </CardTitle>
-          <CardDescription>
-            {isTracking
-              ? "Tracking activo - Los clientes pueden ver tu ubicación en tiempo real"
-              : "Inicia una sesión para compartir tu ubicación con clientes"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-col sm:flex-row gap-3">
-            {!isTracking ? (
-              <Button
-                variant="tracking"
-                size="lg"
-                onClick={handleStartTracking}
-                className="flex-1"
-              >
-                <MapPin className="mr-2 h-5 w-5" />
-                Iniciar Paseo
-              </Button>
-            ) : (
-              <>
-                <Button
-                  variant="destructive"
-                  size="lg"
-                  onClick={handleStopTracking}
-                  className="flex-1"
-                >
-                  <Square className="mr-2 h-4 w-4" />
-                  Finalizar Paseo
-                </Button>
-                <Button
-                  variant="outline"
-                  size="lg"
-                  onClick={() => setShowQR(true)}
-                >
-                  <Share2 className="mr-2 h-4 w-4" />
-                  Ver QR
-                </Button>
-              </>
-            )}
-          </div>
-
-          {isTracking && (
-            <div className="flex items-center gap-2 p-3 bg-success/10 border border-success/20 rounded-lg">
-              <div className="w-2 h-2 bg-success rounded-full animate-pulse" />
-              <span className="text-sm font-medium text-success-foreground">
-                GPS Activo - Ubicación compartida en tiempo real
-              </span>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Dialog open={showQR} onOpenChange={setShowQR}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Código QR - Tracking en Vivo</DialogTitle>
-            <DialogDescription>
-              Los clientes pueden escanear este código para ver tu ubicación
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col items-center gap-4 py-4">
-            {qrUrl && (
-              <div className="bg-white p-4 rounded-lg shadow-md">
-                <QRCodeSVG value={qrUrl} size={256} level="H" />
-              </div>
-            )}
-            <div className="text-center space-y-2">
-              <p className="text-sm text-muted-foreground">URL del tracking:</p>
-              <code className="text-xs bg-muted px-3 py-1 rounded">
-                {qrUrl}
-              </code>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Navigation className="w-5 h-5" />
+          Control de Paseo
+        </CardTitle>
+        <CardDescription>
+          {isTracking 
+            ? "Paseo activo - Ubicación actualizándose cada 5 minutos" 
+            : "Inicia un paseo para compartir tu ubicación con tus clientes"}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isTracking && (
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Tu ubicación se está compartiendo y se actualiza automáticamente cada 5 minutos
+            </AlertDescription>
+          </Alert>
+        )}
+        
+        {isTracking ? (
+          <Button 
+            onClick={stopTracking} 
+            disabled={loading}
+            variant="destructive"
+            className="w-full"
+            size="lg"
+          >
+            <Square className="w-5 h-5 mr-2" />
+            Finalizar Paseo
+          </Button>
+        ) : (
+          <Button 
+            onClick={startTracking} 
+            disabled={loading}
+            className="w-full"
+            size="lg"
+          >
+            <MapPin className="w-5 h-5 mr-2" />
+            Iniciar Paseo
+          </Button>
+        )}
+      </CardContent>
+    </Card>
   );
 };
 

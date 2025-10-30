@@ -4,9 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Dog, Users, MapPin, Activity, LogOut, Navigation } from "lucide-react";
+import { Dog, Users, MapPin, Activity, LogOut, Navigation, QrCode } from "lucide-react";
 import TrackingControls from "@/components/TrackingControls";
 import MetricsCard from "@/components/MetricsCard";
+import AdminQRCode from "@/components/AdminQRCode";
 
 const Dashboard = () => {
   const [user, setUser] = useState<any>(null);
@@ -135,8 +136,11 @@ const Dashboard = () => {
       </header>
 
       <main className="container mx-auto px-4 py-8 space-y-8">
-        {/* Tracking Controls */}
-        <TrackingControls userId={user?.id} onMetricsUpdate={() => fetchMetrics(user?.id)} />
+        {/* QR Code y Tracking Controls */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <AdminQRCode adminId={user?.id} />
+          <TrackingControls userId={user?.id} onMetricsUpdate={() => fetchMetrics(user?.id)} />
+        </div>
 
         {/* Metrics Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

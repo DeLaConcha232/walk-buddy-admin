@@ -23,16 +23,42 @@ const Clients = () => {
         return;
       }
 
-      const { data: affiliations } = await supabase
+      // Obtener afiliaciones del admin
+      const { data: affiliations, error } = await supabase
         .from("affiliations")
-        .select(`
-          *,
-          profiles!affiliations_user_id_fkey(*)
-        `)
+        .select("id, user_id, affiliated_at")
         .eq("admin_id", user.id)
-        .eq("is_active", true);
+        .eq("is_active", true)
+        .order("affiliated_at", { ascending: false });
 
-      setClients(affiliations || []);
+      if (error) throw error;
+
+      if (!affiliations || affiliations.length === 0) {
+        setClients([]);
+        setLoading(false);
+        return;
+      }
+
+      // Obtener perfiles de los usuarios afiliados
+      const userIds = affiliations.map(a => a.user_id);
+      const { data: profiles, error: profilesError } = await supabase
+        .from("profiles")
+        .select("id, name, email, phone")
+        .in("id", userIds);
+
+      if (profilesError) throw profilesError;
+
+      // Combinar datos
+      const clientsData = affiliations.map(affiliation => {
+        const profile = profiles?.find(p => p.id === affiliation.user_id);
+        return {
+          id: affiliation.id,
+          affiliated_at: affiliation.affiliated_at,
+          profiles: profile || { name: "Sin nombre", email: "Sin email", phone: "Sin teléfono" }
+        };
+      });
+
+      setClients(clientsData);
     } catch (error) {
       // Error fetching clients
     } finally {

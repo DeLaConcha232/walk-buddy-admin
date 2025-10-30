@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import LiveTracking from "./pages/LiveTracking";
 import Clients from "./pages/Clients";
 import Walks from "./pages/Walks";
+import ScanQR from "./pages/ScanQR";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -26,6 +27,7 @@ const App = () => (
           <Route path="/track/:walkId" element={<LiveTracking />} />
           <Route path="/clients" element={<Clients />} />
           <Route path="/walks" element={<Walks />} />
+          <Route path="/scan-qr" element={<ScanQR />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

@@ -19,6 +19,7 @@ export type Database = {
           admin_id: string
           created_at: string | null
           id: string
+          is_active: boolean | null
           latitude: number
           longitude: number
           timestamp: string | null
@@ -27,6 +28,7 @@ export type Database = {
           admin_id: string
           created_at?: string | null
           id?: string
+          is_active?: boolean | null
           latitude: number
           longitude: number
           timestamp?: string | null
@@ -35,9 +37,31 @@ export type Database = {
           admin_id?: string
           created_at?: string | null
           id?: string
+          is_active?: boolean | null
           latitude?: number
           longitude?: number
           timestamp?: string | null
+        }
+        Relationships: []
+      }
+      admin_qr_codes: {
+        Row: {
+          admin_id: string
+          code: string
+          created_at: string | null
+          id: string
+        }
+        Insert: {
+          admin_id: string
+          code: string
+          created_at?: string | null
+          id?: string
+        }
+        Update: {
+          admin_id?: string
+          code?: string
+          created_at?: string | null
+          id?: string
         }
         Relationships: []
       }
@@ -261,6 +285,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_admin_active_location: {
+        Args: { admin_user_id: string }
+        Returns: {
+          active: boolean
+          last_update: string
+          lat: number
+          lng: number
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
