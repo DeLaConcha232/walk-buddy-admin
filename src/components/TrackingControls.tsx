@@ -68,7 +68,7 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
     }
   };
 
-  const updateLocation = () => {
+  const updateLocation = async () => {
     if (!navigator.geolocation) {
       toast({
         title: "Error",
@@ -78,67 +78,81 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          // Desactivar ubicaciones anteriores del mismo admin
-          await supabase
-            .from("admin_locations")
-            .update({ is_active: false })
-            .eq("admin_id", userId)
-            .eq("is_active", true);
+    const getPosition = (opts: PositionOptions) =>
+      new Promise<GeolocationPosition>((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject, opts)
+      );
 
-          // Insertar nueva ubicación activa usando OpenStreetMap coords
-          const { error } = await supabase
-            .from("admin_locations")
-            .insert({
-              admin_id: userId,
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-              is_active: true,
-            });
+    const primaryOpts: PositionOptions = {
+      enableHighAccuracy: true,
+      timeout: 20000, // 20s para GPS preciso
+      maximumAge: 0,
+    };
 
-          if (error) {
-            console.error("Error insertando ubicación:", error);
-            throw error;
-          }
-        } catch (error: any) {
-          console.error("Error en updateLocation:", error);
-          toast({
-            title: "Error",
-            description: "No se pudo actualizar la ubicación: " + (error.message || "Error desconocido"),
-            variant: "destructive",
-          });
+    const fallbackOpts: PositionOptions = {
+      enableHighAccuracy: false,
+      timeout: 30000, // 30s y menos precisión
+      maximumAge: 300000, // acepta última ubicación hasta 5 min
+    };
+
+    try {
+      let position: GeolocationPosition;
+
+      try {
+        // Primer intento: alta precisión
+        position = await getPosition(primaryOpts);
+      } catch (err: any) {
+        // Si expira el tiempo, reintentar con opciones relajadas
+        if (err?.code === 3 /* TIMEOUT */) {
+          position = await getPosition(fallbackOpts);
+        } else {
+          throw err;
         }
-      },
-      (error) => {
-        console.error("Error de geolocalización:", error);
-        let errorMessage = "Error obteniendo ubicación";
-        
-        switch (error.code) {
-          case error.PERMISSION_DENIED:
-            errorMessage = "Permiso de ubicación denegado. Habilita la ubicación en tu navegador.";
-            break;
-          case error.POSITION_UNAVAILABLE:
-            errorMessage = "Ubicación no disponible.";
-            break;
-          case error.TIMEOUT:
-            errorMessage = "Timeout obteniendo ubicación.";
-            break;
-        }
-        
-        toast({
-          title: "Error de ubicación",
-          description: errorMessage,
-          variant: "destructive",
-        });
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
       }
-    );
+
+      try {
+        // Desactivar ubicaciones activas previas
+        await supabase
+          .from("admin_locations")
+          .update({ is_active: false })
+          .eq("admin_id", userId)
+          .eq("is_active", true);
+
+        // Insertar nueva ubicación activa
+        const { error } = await supabase
+          .from("admin_locations")
+          .insert({
+            admin_id: userId,
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            is_active: true,
+          });
+
+        if (error) throw error;
+      } catch (dbError) {
+        console.error("Error guardando ubicación en Supabase:", dbError);
+        throw dbError;
+      }
+    } catch (error: any) {
+      console.error("updateLocation error:", error);
+      let description = "No se pudo actualizar la ubicación.";
+      switch (error?.code) {
+        case 1:
+          description = "Permiso de ubicación denegado. Habilita la ubicación en tu navegador.";
+          break;
+        case 2:
+          description = "Ubicación no disponible en este momento.";
+          break;
+        case 3:
+          description = "Se agotó el tiempo obteniendo tu ubicación. Activa el GPS o intenta de nuevo.";
+          break;
+      }
+      toast({
+        title: "Error de ubicación",
+        description,
+        variant: "destructive",
+      });
+    }
   };
 
   const startTracking = async () => {
