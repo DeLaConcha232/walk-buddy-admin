@@ -72,7 +72,7 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
     if (!navigator.geolocation) {
       toast({
         title: "Error",
-        description: "Geolocalización no disponible",
+        description: "Geolocalización no disponible en tu navegador",
         variant: "destructive",
       });
       return;
@@ -81,14 +81,14 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         try {
-          // Desactivar ubicaciones anteriores
+          // Desactivar ubicaciones anteriores del mismo admin
           await supabase
             .from("admin_locations")
             .update({ is_active: false })
             .eq("admin_id", userId)
             .eq("is_active", true);
 
-          // Insertar nueva ubicación activa
+          // Insertar nueva ubicación activa usando OpenStreetMap coords
           const { error } = await supabase
             .from("admin_locations")
             .insert({
@@ -98,19 +98,38 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
               is_active: true,
             });
 
-          if (error) throw error;
+          if (error) {
+            console.error("Error insertando ubicación:", error);
+            throw error;
+          }
         } catch (error: any) {
+          console.error("Error en updateLocation:", error);
           toast({
             title: "Error",
-            description: "No se pudo actualizar la ubicación",
+            description: "No se pudo actualizar la ubicación: " + (error.message || "Error desconocido"),
             variant: "destructive",
           });
         }
       },
       (error) => {
+        console.error("Error de geolocalización:", error);
+        let errorMessage = "Error obteniendo ubicación";
+        
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage = "Permiso de ubicación denegado. Habilita la ubicación en tu navegador.";
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMessage = "Ubicación no disponible.";
+            break;
+          case error.TIMEOUT:
+            errorMessage = "Timeout obteniendo ubicación.";
+            break;
+        }
+        
         toast({
           title: "Error de ubicación",
-          description: error.message,
+          description: errorMessage,
           variant: "destructive",
         });
       },
