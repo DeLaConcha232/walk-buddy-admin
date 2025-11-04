@@ -6,8 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Activity, Clock, MapPin } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useUserRole } from "@/hooks/useUserRole";
 
 const Walks = () => {
+  const { isAdmin, loading: roleLoading } = useUserRole();
   const [walks, setWalks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -65,6 +67,21 @@ const Walks = () => {
     const minutes = Math.floor(duration / 60000);
     return `${minutes} min`;
   };
+
+  if (roleLoading || isAdmin === null) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <Activity className="w-12 h-12 animate-spin text-primary mx-auto" />
+          <p className="text-muted-foreground">Cargando...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-hero">

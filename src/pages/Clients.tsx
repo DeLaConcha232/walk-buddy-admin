@@ -3,10 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Users, Mail, Phone } from "lucide-react";
+import { ArrowLeft, Users, Mail, Phone, Activity } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useUserRole } from "@/hooks/useUserRole";
 
 const Clients = () => {
+  const { isAdmin, loading: roleLoading } = useUserRole();
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -65,6 +67,21 @@ const Clients = () => {
       setLoading(false);
     }
   };
+
+  if (roleLoading || isAdmin === null) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <Activity className="w-12 h-12 animate-spin text-primary mx-auto" />
+          <p className="text-muted-foreground">Cargando...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-hero">

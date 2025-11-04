@@ -8,8 +8,10 @@ import { Dog, Users, MapPin, Activity, LogOut, Navigation, QrCode } from "lucide
 import TrackingControls from "@/components/TrackingControls";
 import MetricsCard from "@/components/MetricsCard";
 import AdminQRCode from "@/components/AdminQRCode";
+import { useUserRole } from "@/hooks/useUserRole";
 
 const Dashboard = () => {
+  const { isAdmin, loading: roleLoading } = useUserRole();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [metrics, setMetrics] = useState({
@@ -103,7 +105,7 @@ const Dashboard = () => {
     }
   };
 
-  if (loading) {
+  if (loading || roleLoading || isAdmin === null) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center space-y-4">
@@ -112,6 +114,10 @@ const Dashboard = () => {
         </div>
       </div>
     );
+  }
+
+  if (!isAdmin) {
+    return null;
   }
 
   return (
