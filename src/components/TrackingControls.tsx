@@ -16,15 +16,33 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const locationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
   // updateLocation defined below
 
   
 
-  const stopLocationTracking = () => {
+  const stopLocationTracking = async () => {
     if (locationIntervalRef.current) {
       clearInterval(locationIntervalRef.current);
       locationIntervalRef.current = null;
+    }
+    
+    // Liberar Wake Lock
+    if (wakeLockRef.current) {
+      await wakeLockRef.current.release();
+      wakeLockRef.current = null;
+    }
+  };
+
+  const requestWakeLock = async () => {
+    if ('wakeLock' in navigator) {
+      try {
+        wakeLockRef.current = await navigator.wakeLock.request('screen');
+        console.log('Wake Lock activado');
+      } catch (err) {
+        console.error('Error al activar Wake Lock:', err);
+      }
     }
   };
 
@@ -117,11 +135,14 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
     }
   }, [toast, userId]);
 
-  const startLocationTracking = useCallback(() => {
+  const startLocationTracking = useCallback(async () => {
     // Limpiar intervalo previo si existe
     if (locationIntervalRef.current) {
       clearInterval(locationIntervalRef.current);
     }
+
+    // Activar Wake Lock para mantener el tracking activo
+    await requestWakeLock();
 
     // Obtener ubicación inmediatamente
     updateLocation();
@@ -156,10 +177,20 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
   useEffect(() => {
     checkActiveTracking();
     
+    // Reactivar Wake Lock si la página se vuelve visible
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible' && isTracking && !wakeLockRef.current) {
+        await requestWakeLock();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
     return () => {
       stopLocationTracking();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [checkActiveTracking]);
+  }, [checkActiveTracking, isTracking]);
 
   const startTracking = async () => {
     setLoading(true);
@@ -189,16 +220,15 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
   const stopTracking = async () => {
     setLoading(true);
     try {
-      // Desactivar todas las ubicaciones activas
+      // Borrar todas las ubicaciones del admin
       const { error } = await supabase
         .from("admin_locations")
-        .update({ is_active: false })
-        .eq("admin_id", userId)
-        .eq("is_active", true);
+        .delete()
+        .eq("admin_id", userId);
 
       if (error) throw error;
 
-      stopLocationTracking();
+      await stopLocationTracking();
       setIsTracking(false);
 
       toast({
