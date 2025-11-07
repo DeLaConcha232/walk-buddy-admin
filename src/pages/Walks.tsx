@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,15 +10,21 @@ import { useUserRole } from "@/hooks/useUserRole";
 
 const Walks = () => {
   const { isAdmin, loading: roleLoading } = useUserRole();
-  const [walks, setWalks] = useState<any[]>([]);
+  type WalkStatus = "active" | "completed" | "cancelled" | "pending";
+  type WalkRow = {
+    id: string;
+    status: WalkStatus;
+    dog_name: string | null;
+    start_time: string | null;
+    end_time: string | null;
+    notes: string | null;
+    profiles?: { name?: string | null } | null;
+  };
+  const [walks, setWalks] = useState<WalkRow[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchWalks();
-  }, []);
-
-  const fetchWalks = async () => {
+  const fetchWalks = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -35,23 +41,27 @@ const Walks = () => {
         .eq("walker_id", user.id)
         .order("created_at", { ascending: false });
 
-      setWalks(data || []);
-    } catch (error) {
+      setWalks((data as unknown as WalkRow[]) || []);
+    } catch {
       // Error fetching walks
     } finally {
       setLoading(false);
     }
-  };
+  }, [navigate]);
 
-  const getStatusBadge = (status: string) => {
-    const variants: any = {
+  useEffect(() => {
+    fetchWalks();
+  }, [fetchWalks]);
+
+  const getStatusBadge = (status: WalkStatus) => {
+    const variants: Record<WalkStatus, NonNullable<React.ComponentProps<typeof Badge>["variant"]>> = {
       active: "default",
       completed: "secondary",
       cancelled: "destructive",
       pending: "outline",
     };
 
-    const labels: any = {
+    const labels: Record<WalkStatus, string> = {
       active: "Activo",
       completed: "Completado",
       cancelled: "Cancelado",

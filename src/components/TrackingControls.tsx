@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,49 +17,9 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
   const { toast } = useToast();
   const locationIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    checkActiveTracking();
-    
-    return () => {
-      stopLocationTracking();
-    };
-  }, [userId]);
+  // updateLocation defined below
 
-  const checkActiveTracking = async () => {
-    try {
-      // Verificar si hay ubicación activa en admin_locations
-      const { data, error } = await supabase
-        .from("admin_locations")
-        .select("is_active")
-        .eq("admin_id", userId)
-        .eq("is_active", true)
-        .maybeSingle();
-
-      if (error) throw error;
-
-      if (data) {
-        setIsTracking(true);
-        startLocationTracking();
-      }
-    } catch (error: any) {
-      // Error checking
-    }
-  };
-
-  const startLocationTracking = () => {
-    // Limpiar intervalo previo si existe
-    if (locationIntervalRef.current) {
-      clearInterval(locationIntervalRef.current);
-    }
-
-    // Obtener ubicación inmediatamente
-    updateLocation();
-
-    // Actualizar ubicación cada 5 minutos
-    locationIntervalRef.current = setInterval(() => {
-      updateLocation();
-    }, 5 * 60 * 1000); // 5 minutos
-  };
+  
 
   const stopLocationTracking = () => {
     if (locationIntervalRef.current) {
@@ -68,7 +28,7 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
     }
   };
 
-  const updateLocation = async () => {
+  const updateLocation = useCallback(async () => {
     if (!navigator.geolocation) {
       toast({
         title: "Error",
@@ -101,9 +61,10 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
       try {
         // Primer intento: alta precisión
         position = await getPosition(primaryOpts);
-      } catch (err: any) {
-        // Si expira el tiempo, reintentar con opciones relajadas
-        if (err?.code === 3 /* TIMEOUT */) {
+      } catch (err: unknown) {
+        // Reintentar con opciones relajadas si TIMEOUT (3) o POSITION_UNAVAILABLE (2)
+        const code = (err as GeolocationPositionError)?.code;
+        if (code === 3 /* TIMEOUT */ || code === 2 /* POSITION_UNAVAILABLE */) {
           position = await getPosition(fallbackOpts);
         } else {
           throw err;
@@ -129,14 +90,15 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
           });
 
         if (error) throw error;
-      } catch (dbError) {
+      } catch (dbError: unknown) {
         console.error("Error guardando ubicación en Supabase:", dbError);
         throw dbError;
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("updateLocation error:", error);
       let description = "No se pudo actualizar la ubicación.";
-      switch (error?.code) {
+      const code = (error as GeolocationPositionError | { code?: number })?.code;
+      switch (code) {
         case 1:
           description = "Permiso de ubicación denegado. Habilita la ubicación en tu navegador.";
           break;
@@ -153,7 +115,51 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
         variant: "destructive",
       });
     }
-  };
+  }, [toast, userId]);
+
+  const startLocationTracking = useCallback(() => {
+    // Limpiar intervalo previo si existe
+    if (locationIntervalRef.current) {
+      clearInterval(locationIntervalRef.current);
+    }
+
+    // Obtener ubicación inmediatamente
+    updateLocation();
+
+    // Actualizar ubicación cada 5 minutos
+    locationIntervalRef.current = setInterval(() => {
+      updateLocation();
+    }, 5 * 60 * 1000); // 5 minutos
+  }, [updateLocation]);
+
+  const checkActiveTracking = useCallback(async () => {
+    try {
+      // Verificar si hay ubicación activa en admin_locations
+      const { data, error } = await supabase
+        .from("admin_locations")
+        .select("is_active")
+        .eq("admin_id", userId)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data) {
+        setIsTracking(true);
+        startLocationTracking();
+      }
+    } catch {
+      // Error checking
+    }
+  }, [userId, startLocationTracking]);
+
+  useEffect(() => {
+    checkActiveTracking();
+    
+    return () => {
+      stopLocationTracking();
+    };
+  }, [checkActiveTracking]);
 
   const startTracking = async () => {
     setLoading(true);
@@ -167,11 +173,12 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
       });
       
       onMetricsUpdate();
-    } catch (error: any) {
+    } catch (error: unknown) {
       setIsTracking(false);
+      const message = error instanceof Error ? error.message : "Ocurrió un error";
       toast({
         title: "Error",
-        description: error.message,
+        description: message,
         variant: "destructive",
       });
     } finally {
@@ -200,10 +207,11 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
       });
       
       onMetricsUpdate();
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Ocurrió un error";
       toast({
         title: "Error",
-        description: error.message,
+        description: message,
         variant: "destructive",
       });
     } finally {

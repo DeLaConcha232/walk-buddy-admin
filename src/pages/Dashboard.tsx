@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { User } from "@supabase/supabase-js";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,7 +13,7 @@ import { useUserRole } from "@/hooks/useUserRole";
 
 const Dashboard = () => {
   const { isAdmin, loading: roleLoading } = useUserRole();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [metrics, setMetrics] = useState({
     totalClients: 0,
@@ -96,10 +97,11 @@ const Dashboard = () => {
         description: "Has cerrado sesión exitosamente",
       });
       navigate("/auth");
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Ocurrió un error";
       toast({
         title: "Error",
-        description: error.message,
+        description: message,
         variant: "destructive",
       });
     }

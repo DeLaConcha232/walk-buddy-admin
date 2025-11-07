@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -18,22 +18,43 @@ const Auth = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  const verifyAdminSession = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    try {
+      const { data, error } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", session.user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      if (error) throw error;
+      if (data) {
+        navigate("/dashboard");
+      } else {
+        toast({
+          title: "Acceso restringido",
+          description: "Tu cuenta no tiene rol de administrador",
+          variant: "destructive",
+        });
+        await supabase.auth.signOut();
+      }
+    } catch (err: unknown) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "No se pudo verificar el rol",
+        variant: "destructive",
+      });
+    }
+  }, [navigate, toast]);
+
   useEffect(() => {
-    // Check if user is already logged in
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        navigate("/dashboard");
-      }
+    verifyAdminSession();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      verifyAdminSession();
     });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session) {
-        navigate("/dashboard");
-      }
-    });
-
     return () => subscription.unsubscribe();
-  }, [navigate]);
+  }, [verifyAdminSession]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,10 +72,11 @@ const Auth = () => {
         title: "¡Bienvenido!",
         description: "Inicio de sesión exitoso",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "No se pudo iniciar sesión";
       toast({
         title: "Error",
-        description: error.message || "No se pudo iniciar sesión",
+        description: message,
         variant: "destructive",
       });
     } finally {
@@ -85,10 +107,11 @@ const Auth = () => {
         title: "¡Registro exitoso!",
         description: "Revisa tu email para confirmar tu cuenta",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "No se pudo completar el registro";
       toast({
         title: "Error",
-        description: error.message || "No se pudo completar el registro",
+        description: message,
         variant: "destructive",
       });
     } finally {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,22 +7,18 @@ import LiveMap from "@/components/LiveMap";
 
 const LiveTracking = () => {
   const { walkId } = useParams();
-  const [walkData, setWalkData] = useState<any>(null);
+  type WalkWithProfile = {
+    id: string;
+    walker_id: string;
+    dog_name: string | null;
+    profiles?: { name?: string | null } | null;
+  };
+  const [walkData, setWalkData] = useState<WalkWithProfile | null>(null);
   const [currentPosition, setCurrentPosition] = useState<[number, number] | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
-  useEffect(() => {
+  const fetchWalkData = useCallback(async () => {
     if (!walkId) return;
-
-    fetchWalkData();
-    const unsubscribe = subscribeToLocationUpdates();
-
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, [walkId]);
-
-  const fetchWalkData = async () => {
     try {
       const { data } = await supabase
         .from("walks")
@@ -30,13 +26,13 @@ const LiveTracking = () => {
         .eq("id", walkId)
         .single();
 
-      setWalkData(data);
+      setWalkData(data as unknown as WalkWithProfile);
       
       // Get latest location
       const { data: location } = await supabase
         .from("admin_locations")
         .select("*")
-        .eq("admin_id", data.walker_id)
+  .eq("admin_id", (data as WalkWithProfile).walker_id)
         .order("timestamp", { ascending: false })
         .limit(1)
         .single();
@@ -47,12 +43,12 @@ const LiveTracking = () => {
         setCurrentPosition([lat, lng]);
         setLastUpdate(new Date(location.timestamp));
       }
-    } catch (error) {
+    } catch {
       // Error fetching walk data
     }
-  };
+  }, [walkId]);
 
-  const subscribeToLocationUpdates = () => {
+  const subscribeToLocationUpdates = useCallback(() => {
     const channel = supabase
       .channel("location-updates")
       .on(
@@ -63,7 +59,7 @@ const LiveTracking = () => {
           table: "admin_locations",
         },
         (payload) => {
-          const location = payload.new;
+          const location = payload.new as { latitude: number | string; longitude: number | string; timestamp: string };
           const lat = Number(location.latitude);
           const lng = Number(location.longitude);
           setCurrentPosition([lat, lng]);
@@ -75,7 +71,16 @@ const LiveTracking = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!walkId) return;
+    fetchWalkData();
+    const unsubscribe = subscribeToLocationUpdates();
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [walkId, fetchWalkData, subscribeToLocationUpdates]);
 
   return (
     <div className="min-h-screen bg-gradient-hero">

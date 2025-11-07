@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,11 +15,7 @@ const AdminQRCode = ({ adminId }: AdminQRCodeProps) => {
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
-  useEffect(() => {
-    fetchOrCreateQRCode();
-  }, [adminId]);
-
-  const fetchOrCreateQRCode = async () => {
+  const fetchOrCreateQRCode = useCallback(async () => {
     try {
       setLoading(true);
       
@@ -52,16 +48,21 @@ const AdminQRCode = ({ adminId }: AdminQRCodeProps) => {
           description: "Tu código QR permanente ha sido creado",
         });
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Ocurrió un error inesperado";
       toast({
         title: "Error",
-        description: error.message,
+        description: message,
         variant: "destructive",
       });
     } finally {
       setLoading(false);
     }
-  };
+  }, [adminId, toast]);
+
+  useEffect(() => {
+    fetchOrCreateQRCode();
+  }, [fetchOrCreateQRCode]);
 
   const downloadQR = () => {
     const canvas = document.getElementById("admin-qr-code") as HTMLCanvasElement;

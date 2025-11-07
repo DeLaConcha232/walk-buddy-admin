@@ -29,7 +29,6 @@ export const useUserRole = () => {
         if (error || !data) {
           setIsAdmin(false);
           setLoading(false);
-          navigate("/auth");
           return;
         }
 
@@ -38,7 +37,6 @@ export const useUserRole = () => {
       } catch (error) {
         setIsAdmin(false);
         setLoading(false);
-        navigate("/auth");
       }
     };
 

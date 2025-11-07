@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,15 +9,13 @@ import { useUserRole } from "@/hooks/useUserRole";
 
 const Clients = () => {
   const { isAdmin, loading: roleLoading } = useUserRole();
-  const [clients, setClients] = useState<any[]>([]);
+  type Profile = { id: string; name: string | null; email: string | null; phone: string | null };
+  type ClientRow = { id: string; affiliated_at: string; profiles: Profile };
+  const [clients, setClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchClients();
-  }, []);
-
-  const fetchClients = async () => {
+  const fetchClients = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -42,7 +40,7 @@ const Clients = () => {
       }
 
       // Obtener perfiles de los usuarios afiliados
-      const userIds = affiliations.map(a => a.user_id);
+      const userIds = affiliations.map((a) => a.user_id);
       const { data: profiles, error: profilesError } = await supabase
         .from("profiles")
         .select("id, name, email, phone")
@@ -51,22 +49,26 @@ const Clients = () => {
       if (profilesError) throw profilesError;
 
       // Combinar datos
-      const clientsData = affiliations.map(affiliation => {
-        const profile = profiles?.find(p => p.id === affiliation.user_id);
+      const clientsData: ClientRow[] = affiliations.map((affiliation) => {
+        const profile = profiles?.find((p) => p.id === affiliation.user_id);
         return {
           id: affiliation.id,
           affiliated_at: affiliation.affiliated_at,
-          profiles: profile || { name: "Sin nombre", email: "Sin email", phone: "Sin teléfono" }
+          profiles: (profile as Profile) || { id: "", name: "Sin nombre", email: "Sin email", phone: "Sin teléfono" },
         };
       });
 
       setClients(clientsData);
-    } catch (error) {
+    } catch {
       // Error fetching clients
     } finally {
       setLoading(false);
     }
-  };
+  }, [navigate]);
+
+  useEffect(() => {
+    fetchClients();
+  }, [fetchClients]);
 
   if (roleLoading || isAdmin === null) {
     return (
