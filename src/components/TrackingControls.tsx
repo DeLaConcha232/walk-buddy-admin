@@ -175,6 +175,7 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
   }, [userId, startLocationTracking]);
 
   useEffect(() => {
+    // Solo verificar tracking activo al montar el componente
     checkActiveTracking();
     
     // Reactivar Wake Lock si la página se vuelve visible
@@ -190,7 +191,8 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
       stopLocationTracking();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [checkActiveTracking, isTracking]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Solo ejecutar al montar
 
   const startTracking = async () => {
     setLoading(true);
@@ -220,6 +222,17 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
   const stopTracking = async () => {
     setLoading(true);
     try {
+      // Primero detener el tracking localmente
+      setIsTracking(false);
+      await stopLocationTracking();
+
+      // Luego desactivar y borrar ubicaciones en la base de datos
+      await supabase
+        .from("admin_locations")
+        .update({ is_active: false })
+        .eq("admin_id", userId)
+        .eq("is_active", true);
+
       // Borrar todas las ubicaciones del admin
       const { error } = await supabase
         .from("admin_locations")
@@ -227,9 +240,6 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
         .eq("admin_id", userId);
 
       if (error) throw error;
-
-      await stopLocationTracking();
-      setIsTracking(false);
 
       toast({
         title: "Paseo Finalizado",
