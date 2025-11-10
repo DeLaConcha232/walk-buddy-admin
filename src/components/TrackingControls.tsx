@@ -15,17 +15,19 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
   const [isTracking, setIsTracking] = useState(false);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
-  const locationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const watchIdRef = useRef<number | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const lastUpdateRef = useRef<number>(0);
 
   // updateLocation defined below
 
   
 
   const stopLocationTracking = async () => {
-    if (locationIntervalRef.current) {
-      clearInterval(locationIntervalRef.current);
-      locationIntervalRef.current = null;
+    // Detener watchPosition
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
     }
     
     // Liberar Wake Lock
@@ -46,7 +48,65 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
     }
   };
 
-  const updateLocation = useCallback(async () => {
+  const saveLocation = useCallback(async (latitude: number, longitude: number) => {
+    try {
+      // Desactivar ubicaciones activas previas
+      await supabase
+        .from("admin_locations")
+        .update({ is_active: false })
+        .eq("admin_id", userId)
+        .eq("is_active", true);
+
+      // Insertar nueva ubicación activa
+      const { error } = await supabase
+        .from("admin_locations")
+        .insert({
+          admin_id: userId,
+          latitude,
+          longitude,
+          is_active: true,
+        });
+
+      if (error) throw error;
+      console.log("Ubicación actualizada:", { latitude, longitude });
+    } catch (dbError: unknown) {
+      console.error("Error guardando ubicación en Supabase:", dbError);
+    }
+  }, [userId]);
+
+  const handlePositionUpdate = useCallback((position: GeolocationPosition) => {
+    const now = Date.now();
+    const timeSinceLastUpdate = now - lastUpdateRef.current;
+    
+    // Actualizar cada 5 minutos (300000 ms)
+    if (timeSinceLastUpdate >= 300000 || lastUpdateRef.current === 0) {
+      lastUpdateRef.current = now;
+      saveLocation(position.coords.latitude, position.coords.longitude);
+    }
+  }, [saveLocation]);
+
+  const handlePositionError = useCallback((error: GeolocationPositionError) => {
+    console.error("Error de geolocalización:", error);
+    let description = "No se pudo obtener la ubicación.";
+    switch (error.code) {
+      case 1:
+        description = "Permiso de ubicación denegado. Habilita la ubicación en tu navegador.";
+        break;
+      case 2:
+        description = "Ubicación no disponible en este momento.";
+        break;
+      case 3:
+        description = "Se agotó el tiempo obteniendo tu ubicación.";
+        break;
+    }
+    toast({
+      title: "Error de ubicación",
+      description,
+      variant: "destructive",
+    });
+  }, [toast]);
+
+  const startLocationTracking = useCallback(async () => {
     if (!navigator.geolocation) {
       toast({
         title: "Error",
@@ -56,102 +116,30 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
       return;
     }
 
-    const getPosition = (opts: PositionOptions) =>
-      new Promise<GeolocationPosition>((resolve, reject) =>
-        navigator.geolocation.getCurrentPosition(resolve, reject, opts)
-      );
-
-    const primaryOpts: PositionOptions = {
-      enableHighAccuracy: true,
-      timeout: 20000, // 20s para GPS preciso
-      maximumAge: 0,
-    };
-
-    const fallbackOpts: PositionOptions = {
-      enableHighAccuracy: false,
-      timeout: 30000, // 30s y menos precisión
-      maximumAge: 300000, // acepta última ubicación hasta 5 min
-    };
-
-    try {
-      let position: GeolocationPosition;
-
-      try {
-        // Primer intento: alta precisión
-        position = await getPosition(primaryOpts);
-      } catch (err: unknown) {
-        // Reintentar con opciones relajadas si TIMEOUT (3) o POSITION_UNAVAILABLE (2)
-        const code = (err as GeolocationPositionError)?.code;
-        if (code === 3 /* TIMEOUT */ || code === 2 /* POSITION_UNAVAILABLE */) {
-          position = await getPosition(fallbackOpts);
-        } else {
-          throw err;
-        }
-      }
-
-      try {
-        // Desactivar ubicaciones activas previas
-        await supabase
-          .from("admin_locations")
-          .update({ is_active: false })
-          .eq("admin_id", userId)
-          .eq("is_active", true);
-
-        // Insertar nueva ubicación activa
-        const { error } = await supabase
-          .from("admin_locations")
-          .insert({
-            admin_id: userId,
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            is_active: true,
-          });
-
-        if (error) throw error;
-      } catch (dbError: unknown) {
-        console.error("Error guardando ubicación en Supabase:", dbError);
-        throw dbError;
-      }
-    } catch (error: unknown) {
-      console.error("updateLocation error:", error);
-      let description = "No se pudo actualizar la ubicación.";
-      const code = (error as GeolocationPositionError | { code?: number })?.code;
-      switch (code) {
-        case 1:
-          description = "Permiso de ubicación denegado. Habilita la ubicación en tu navegador.";
-          break;
-        case 2:
-          description = "Ubicación no disponible en este momento.";
-          break;
-        case 3:
-          description = "Se agotó el tiempo obteniendo tu ubicación. Activa el GPS o intenta de nuevo.";
-          break;
-      }
-      toast({
-        title: "Error de ubicación",
-        description,
-        variant: "destructive",
-      });
-    }
-  }, [toast, userId]);
-
-  const startLocationTracking = useCallback(async () => {
-    // Limpiar intervalo previo si existe
-    if (locationIntervalRef.current) {
-      clearInterval(locationIntervalRef.current);
+    // Detener tracking previo si existe
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
     }
 
-    // Activar Wake Lock para mantener el tracking activo
+    // Activar Wake Lock para mantener el dispositivo activo
     await requestWakeLock();
 
-    // Obtener ubicación inmediatamente
-    updateLocation();
+    // Opciones para watchPosition - diseñado para rastreo continuo
+    const watchOptions: PositionOptions = {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 30000,
+    };
 
-    // Actualizar ubicación cada 5 minutos
-    locationIntervalRef.current = setInterval(() => {
-      updateLocation();
-    }, 5 * 60 * 1000); // 5 minutos
-  }, [updateLocation]);
+    // Iniciar rastreo continuo con watchPosition
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      handlePositionUpdate,
+      handlePositionError,
+      watchOptions
+    );
+
+    console.log("Rastreo de ubicación iniciado con watchPosition");
+  }, [handlePositionUpdate, handlePositionError, toast]);
 
   const checkActiveTracking = useCallback(async () => {
     try {
