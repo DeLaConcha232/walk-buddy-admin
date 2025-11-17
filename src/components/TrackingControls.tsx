@@ -78,8 +78,8 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
     const now = Date.now();
     const timeSinceLastUpdate = now - lastUpdateRef.current;
     
-    // Actualizar cada 5 minutos (300000 ms)
-    if (timeSinceLastUpdate >= 300000 || lastUpdateRef.current === 0) {
+    // Actualizar cada 10 minutos (600000 ms) para optimizar consumo de datos y batería
+    if (timeSinceLastUpdate >= 600000 || lastUpdateRef.current === 0) {
       lastUpdateRef.current = now;
       saveLocation(position.coords.latitude, position.coords.longitude);
     }
@@ -124,11 +124,11 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
     // Activar Wake Lock para mantener el dispositivo activo
     await requestWakeLock();
 
-    // Opciones para watchPosition - diseñado para rastreo continuo
+    // Opciones optimizadas para watchPosition - balance entre precisión y consumo de recursos
     const watchOptions: PositionOptions = {
-      enableHighAccuracy: true,
-      maximumAge: 0,
-      timeout: 30000,
+      enableHighAccuracy: true, // Mantener precisión GPS para seguimiento de paseos
+      maximumAge: 120000, // Permitir usar posiciones de hasta 2 minutos para reducir uso de GPS
+      timeout: 30000, // 30 segundos de timeout
     };
 
     // Iniciar rastreo continuo con watchPosition
@@ -190,7 +190,7 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
       
       toast({
         title: "Paseo Iniciado",
-        description: "Tu ubicación se actualizará cada 5 minutos",
+        description: "Tu ubicación se actualizará cada 10 minutos",
       });
       
       onMetricsUpdate();
@@ -256,7 +256,7 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
         </CardTitle>
         <CardDescription>
           {isTracking 
-            ? "Paseo activo - Ubicación actualizándose cada 5 minutos" 
+            ? "Paseo activo - Ubicación actualizándose cada 10 minutos" 
             : "Inicia un paseo para compartir tu ubicación con tus clientes"}
         </CardDescription>
       </CardHeader>
@@ -265,7 +265,7 @@ const TrackingControls = ({ userId, onMetricsUpdate }: TrackingControlsProps) =>
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              Tu ubicación se está compartiendo y se actualiza automáticamente cada 5 minutos
+              Tu ubicación se está compartiendo y se actualiza automáticamente cada 10 minutos
             </AlertDescription>
           </Alert>
         )}
